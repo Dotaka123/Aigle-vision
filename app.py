@@ -41,7 +41,7 @@ FORM_PASSPORT = {
 FORM_STEPS = {
     "FORM_FORMATION": {
         "start_field": "nom_prenom",
-        "start_question": "Parfait ! Pour l'inscription à la formation (40 000 Ar), quel est votre **Nom et Prénom** ?",
+        "start_question": "Parfait ! Pour l'inscription à la formation (120 000 Ar), quel est votre **Nom et Prénom** ?",
         "steps": [
             ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
             ("adresse", "Quelle est votre **Adresse** complète ?", ),
@@ -185,7 +185,11 @@ def call_external_api(query, sender_id):
     try:
         params = {
             "query": query, "uid": sender_id, "model": "gpt-5",
-            "system": f"Tu es le bot amical de {PAGE_NAME}. Tu proposes des formations en travail en ligne et des proxys de qualité à prix abordable.",
+            "system": f"Tu es le bot amical de {PAGE_NAME}. Tu proposes des formations en travail en ligne et des proxys de qualité à prix abordable.A chaque fois nouvelle user tu lui envoye ca Tongasoa eto amin'ny pejy Aigle Vision Mada! 🦅
+
+Manolotra fiofanana feno momba ny Survey sy Microtache izahay, hahafahanao miasa sy mahazo vola amin'ny aterineto. Vonona hanampy anao izahay.
+
+Kitiho ny bokotra "Offres" na "Formation" hijerena ny antsipiriany! ;lors de nouvelle utilisateur je dis pas a chaque fois que tu reponds",
             "imgurl": ""
         }
         response = requests.get(EXTERNAL_API_URL, params=params, timeout=10)
