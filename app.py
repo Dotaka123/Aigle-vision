@@ -3,14 +3,16 @@ import requests
 import json
 import uuid
 from flask import Flask, request, jsonify
+from furl import furl # Nouvelle dépendance pour construire l'URL du QR code
 
 # --- CONFIGURATION & JESTONS ---
 # REMPLACEZ CES VALEURS PAR VOS JETONS RÉELS
 VERIFY_TOKEN = os.environ.get('VERIFY_TOKEN', 'tata')
-PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBP18nheov9XkSxw6GZCt6SWzl80QhtF8A42KTex5LfXd45ZAZAH8tZBws7xbvEvSeZA1A5BL2mQ8ZAZAyDp6pdNnVU7tDD1oEbKvivicTZC61igI53tCPZC1qFj3XCCsSOgXa95i1I5ujLg55K0jxZCuvQx8pe1pa4UIVav4gJ2EfQrUztNY49IqGGl9AqZABOLEwnWsqSzbyEUnsAZDZD')
+PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBP9huNSoXrFezTeCrBffd0rURuygt1fyh3UUJYMRxZAYeVrQpBTCM925ZBdUdVgiycFdTjGYLvE2txLB29Wne2YjypGX32OzxR1qxz6d3jMck9EbwHWHt0RuY4Y7BgKdHjeyZBQuwHVCaqMwJPce3ZCfEmOWcV7hBa64gX4ilVv11yjhqyotOQMCAsaKZARE5rp1ic5T1KTQZDZD')
 PAGE_NAME = "Aigle Vision Mada"
 EXTERNAL_API_URL = "https://rest-api-o42n.onrender.com/api/chatgpt5"
 QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/" # API QR Code
+BASE_SYSTEM_PROMPT = f"Tu es le bot amical de {PAGE_NAME}. Tu proposes des formations en travail en ligne et des proxys de qualité à prix abordable."
 
 # ID FACEBOOK DE L'ADMINISTRATEUR
 ADMIN_SENDER_ID = os.environ.get('ADMIN_ID', 'VOTRE_ADMIN_ID_NUMERIQUE') 
@@ -21,12 +23,19 @@ PROXY_COST_AR = 47000
 FORMATION_COST_AR = 120000 
 PASSPORT_COST_AR = 40000 
 
+# --- MESSAGE DE BIENVENUE EN MALGACHE (NOUVEAU) ---
+WELCOME_MESSAGE_MG = (
+    "Tongasoa eto amin'ny pejy **Aigle Vision Mada**! 🦅\n\n"
+    "Manolotra **fiofanana feno momba ny Survey sy Microtache** izahay, hahafahanao miasa sy mahazo vola amin'ny aterineto. Vonona hanampy anao izahay.\n\n"
+    "Kitiho ny bokotra **\"Offres\"** na **\"Formation\"** hijerena ny antsipiriany!"
+)
+
 # --- ÉTATS DE SESSION ---
 user_session_state = {} 
 
 app = Flask(__name__)
 
-# --- DÉFINITION DES ÉTAPES DU FORMULAIRE ---
+# --- DÉFINITION DES ÉTAPES DU FORMULAIRE (Aucun changement ici, juste pour référence) ---
 FORM_PASSPORT = {
     "start_field": "nom_prenom",
     "start_question": "Pour la création de votre passeport de vérification d'identité (40 000 Ar), quel est votre **Nom et Prénom** ?",
@@ -41,12 +50,12 @@ FORM_PASSPORT = {
 FORM_STEPS = {
     "FORM_FORMATION": {
         "start_field": "nom_prenom",
-        "start_question": "Parfait ! Pour l'inscription à la formation (120 000 Ar), quel est votre **Nom et Prénom** ?",
+        "start_question": f"Parfait ! Pour l'inscription à la formation ({FORMATION_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
         "steps": [
             ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
             ("adresse", "Quelle est votre **Adresse** complète ?", ),
             ("competence", "Avez-vous de l'expérience concernant les **sondages en ligne** ? (Oui/Non ou précisez vos compétences)"),
-            ("confirmation", "Merci ! Veuillez confirmer votre inscription (40 000 Ar) : (OUI pour valider)"),
+            ("confirmation", "Merci ! Veuillez confirmer votre inscription (120 000 Ar) : (OUI pour valider)"),
         ],
         "end_message": "INSCRIPTION FORMATION"
     },
@@ -89,9 +98,10 @@ def send_message_to_admin(admin_id, message_text):
         print(f"Erreur lors de l'envoi de la notification admin : {e}")
         return False
 
-def send_message(recipient_id, message_text, current_state="AI"):
+def send_message(recipient_id, message_text, current_state="AI", is_initial_message=False):
     """Envoie une réponse à l'utilisateur avec les boutons d'action (Quick Replies)."""
     
+    # 1. Définition des Quick Replies basées sur l'état
     if current_state != "HUMAN":
         quick_replies = [
             {"content_type": "text", "title": "Offres", "payload": "SHOW_OFFERS_MENU"},
@@ -116,8 +126,8 @@ def send_message(recipient_id, message_text, current_state="AI"):
 def upload_and_send_image(recipient_id, image_url):
     """
     Télécharge le QR code en mémoire et l'uploade sur Facebook pour contourner robots.txt.
-    Ceci est la nouvelle méthode d'envoi d'image.
     """
+    # ... (le reste du corps de cette fonction reste inchangé) ...
     print(f"--- Téléchargement du QR Code depuis {image_url} ---")
     
     try:
@@ -157,7 +167,7 @@ def upload_and_send_image(recipient_id, image_url):
 
 def handle_offers_menu(sender_id):
     """Affiche le menu détaillé des offres."""
-    
+    # ... (le reste du corps de cette fonction reste inchangé) ...
     message_text = "🔎 **Voici toutes nos offres de services et produits** :"
     
     offers_replies = [
@@ -185,11 +195,7 @@ def call_external_api(query, sender_id):
     try:
         params = {
             "query": query, "uid": sender_id, "model": "gpt-5",
-            "system": f"Tu es le bot amical de {PAGE_NAME}. Tu proposes des formations en travail en ligne et des proxys de qualité à prix abordable.A chaque fois nouvelle user tu lui envoye ca Tongasoa eto amin'ny pejy Aigle Vision Mada! 🦅
-
-Manolotra fiofanana feno momba ny Survey sy Microtache izahay, hahafahanao miasa sy mahazo vola amin'ny aterineto. Vonona hanampy anao izahay.
-
-Kitiho ny bokotra "Offres" na "Formation" hijerena ny antsipiriany! ;lors de nouvelle utilisateur je dis pas a chaque fois que tu reponds",
+            "system": BASE_SYSTEM_PROMPT, # Utilisation de la nouvelle constante
             "imgurl": ""
         }
         response = requests.get(EXTERNAL_API_URL, params=params, timeout=10)
@@ -286,12 +292,11 @@ def handle_form_input(sender_id, message_text):
                 
                 send_message(sender_id, user_recap_message, current_state="AI") 
 
-                # --- GÉNÉRATION ET ENVOI DU QR CODE (NOUVELLE MÉTHODE) ---
-                qr_params = {
+                # --- GÉNÉRATION ET ENVOI DU QR CODE (NOUVELLE MÉTHODE avec furl) ---
+                qr_code_url = furl(QR_API_URL).add({
                     "size": "150x150",
                     "data": qr_data
-                }
-                qr_code_url = requests.Request('GET', QR_API_URL, params=qr_params).prepare().url
+                }).url
                 
                 # Utilisation de la nouvelle fonction qui uploade d'abord le fichier
                 upload_and_send_image(sender_id, qr_code_url)
@@ -404,8 +409,10 @@ def handle_messages():
             for messaging_event in entry.get("messaging", []):
                 sender_id = messaging_event["sender"]["id"]
                 
-                if sender_id not in user_session_state:
-                    user_session_state[sender_id] = {'state': 'AI', 'step': 0, 'data': {}}
+                # Initialisation de la session (NOUVEAU : ajout de 'is_new_user')
+                is_new_user = sender_id not in user_session_state
+                if is_new_user:
+                    user_session_state[sender_id] = {'state': 'AI', 'step': 0, 'data': {}, 'is_new_user': True}
                 
                 message = messaging_event.get("message")
                 postback = messaging_event.get("postback")
@@ -426,6 +433,12 @@ def handle_messages():
                         message_text = ""
 
                     current_session_state = user_session_state[sender_id]['state']
+                    
+                    # ENVOI DU MESSAGE DE BIENVENUE EN MALGACHE (UNIQUEMENT SI NOUVEL UTILISATEUR)
+                    if is_new_user and message_text:
+                        send_message(sender_id, WELCOME_MESSAGE_MG, current_state="AI")
+                        user_session_state[sender_id]['is_new_user'] = False # Marque comme non nouveau pour la prochaine fois
+                        # On continue ensuite le traitement pour répondre au message initial
 
                     # 1. GESTION DES COMMANDES DE CONTRÔLE (HUMAN/AI)
                     if payload in ["HUMAN_AGENT", "AI_AGENT"]:
@@ -485,4 +498,5 @@ def handle_messages():
 
 if __name__ == '__main__':
     print(f"Démarrage du bot Messenger pour {PAGE_NAME}...")
+    # NOTE: Pour le déploiement sur Render ou Hugging Face, 'PORT' est généralement défini par l'environnement.
     app.run(host='0.0.0.0', port=os.environ.get('PORT', 5000))
