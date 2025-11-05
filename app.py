@@ -2,13 +2,13 @@ import os
 import requests
 import json
 import uuid
-import random # NOUVEAU: Import pour les réponses aléatoires
+import random 
 from flask import Flask, request, jsonify
 
 # --- CONFIGURATION & JETONS ---
 # REMPLACEZ CES VALEURS PAR VOS JETONS RÉELS
 VERIFY_TOKEN = os.environ.get('VERIFY_TOKEN', 'tata')
-PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBP2XhtMRszFhJ2Suqxyt0dfHKjxr66CwHO6rnb0DVs5l56CHQxWpqZCaGd71Sraw7I7s1JUaf8Dn8d043sGBgNp0JmYGZBhT4nGibcK1TrLdCZArYVwQKoEMaB9EC7GrQZBHxTiFTOwiEc2j7ugESKEfCkCmAGQZAjMPPF9hvnRQQ27ZBTYsTZBrIw4kdxZCRisXlye9Vsvn7pgZDZD')
+PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBP8akgjumyPKeBTZBZCq6updYBcX8EXEqjQTdZBYZCLEbTfpyBot6dqiAUixLajtwti0H20hQb4cZCWoaWqXVsmAFD4ZAFxzZAVAT8UBl9BN3xuLI2ZCE0OlQ3OpJbmeLlVfMKlPT1DDeYybycKPZB43tLMSFTFVrZB1CyG3dtl6pyqInHwcQ8a95ms1T0jJzAOgd0Xh7wCZA1w4PQZDZD')
 PAGE_NAME = "Aigle Vision Mada"
 EXTERNAL_API_URL = "https://rest-api-o42n.onrender.com/api/chatgpt5"
 QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/" 
@@ -27,10 +27,10 @@ PASSPORT_COST_AR = 40000
 WELCOME_MESSAGE_MG = (
     "Tongasoa eto amin'ny pejy **Aigle Vision Mada**! 🦅\n\n"
     "Manolotra **fiofanana feno momba ny Surveys sy Micro-tâches** izahay, hahafahanao miasa sy mahazo vola amin'ny aterineto. Vonona hanampy anao izahay. **Ato ianao dia afaka mahazo karama 3$ - 10$ isan'andro.**\n\n"
-    "Kitiho ny bokotra **\"Offres\"** na **\"Faire une formation\"** hijerena ny antsipiriany!"
+    "Kitiho ny bokotra **\"Offres\"** ou **\"Faire une formation\"** hijerena ny antsipiriany!"
 )
 
-# NOUVEAU: Réponses de repli en Malgache en cas d'échec de l'IA externe
+# Réponses de repli en Malgache en cas d'échec de l'IA externe
 MALAGASY_FALLBACK_RESPONSES = [
     "Aigle Vision Mada no vahaolana ho an'ny asa an-tserasera! Miantsena Proxy haingana sy azo antoka eto.",
     "Tadidio fa manome fiofanana manokana momba ny surveys sy micro-tâches izahay ao amin'ny Aigle Vision Mada. Tsy maintsy miezaka ianao!",
@@ -88,7 +88,7 @@ FORM_STEPS = {
 
 def send_message_to_admin(admin_id, message_text):
     """Envoie un message de notification à l'administrateur."""
-    if admin_id == '100039040104071':
+    if admin_id == 'VOTRE_ADMIN_ID_NUMERIQUE':
         print("\n--- ATTENTION : L'ID ADMIN n'est pas configuré. Le message est imprimé localement. ---\n")
         print(message_text)
         return False
@@ -114,6 +114,8 @@ def send_message(recipient_id, message_text, current_state="AI"):
     if current_state != "HUMAN":
         quick_replies = [
             {"content_type": "text", "title": "Offres", "payload": "SHOW_OFFERS_MENU"},
+            # FIX: Ajout explicite du bouton Formation avec son payload
+            {"content_type": "text", "title": "Faire une formation", "payload": "OFFER_FORMATION_INFO"}, 
             {"content_type": "text", "title": "Parler à une personne", "payload": "HUMAN_AGENT"},
         ]
     else:
@@ -267,7 +269,7 @@ def call_external_api(query, sender_id):
         data = response.json()
         return data.get("result", "Je suis désolé, l'IA externe n'a pas pu générer de réponse pour l'instant.")
     except requests.exceptions.RequestException as e:
-        # MODIFICATION : Retourne une phrase aléatoire en malgache
+        # LOGIQUE DE REPLI EN MALGACHE
         return random.choice(MALAGASY_FALLBACK_RESPONSES)
 
 
@@ -430,7 +432,7 @@ def get_bot_response(message_text, sender_id):
     # Si le message n'est pas vide et ne correspond à aucun mot-clé/payload, on appelle l'IA
     if message_text.strip():
         response = call_external_api(message_text, sender_id)
-        # Si la réponse est en Malgache, cela signifie qu'une erreur s'est produite (selon la logique de call_external_api)
+        # Si la réponse est en Malgache, cela signifie qu'une erreur s'est produite
         if response in MALAGASY_FALLBACK_RESPONSES:
             # On envoie le message directement dans la logique POST car c'est un fallback
             send_message(sender_id, response, current_state="AI")
@@ -520,8 +522,9 @@ def handle_messages():
                         send_message(sender_id, response_text, current_state="AI")
                         return "OK", 200
                     
-                    # 3. GESTION DE LA CONVERSATION
+                    # 3. GESTION DE LA CONVERSATION (MODE HUMAN)
                     if current_session_state == "HUMAN":
+                        # Dans ce mode, on ne fait rien, on laisse l'admin répondre
                         return "OK", 200
 
                     # 4. RÉPONSE AUX BOUTONS D'OFFRE (OFFER_*) 
@@ -529,24 +532,26 @@ def handle_messages():
                         response_text = get_bot_response(payload, sender_id)
                         
                         if response_text == "HANDLED_INTERNALLY":
+                            # Le message a été géré (formation/QR)
                             return "OK", 200 
                         
                         if response_text: # Gère le cas du Passeport
                             send_message(sender_id, response_text, current_state="AI")
                         return "OK", 200
                         
+                    # 5. GESTION DES FORMULAIRES ACTIFS
                     if current_session_state.startswith("FORM_"):
                         response_text = handle_form_input(sender_id, message_text)
                         if response_text != "QR_SENT":
                             send_message(sender_id, response_text, current_state="AI")
                         return "OK", 200
 
-                    # 5. RÉPONSE IA GÉNÉRALE
+                    # 6. RÉPONSE IA GÉNÉRALE
                     if message_text.strip(): 
                         response_text = get_bot_response(message_text, sender_id)
                         
                         if response_text in ["HANDLED_INTERNALLY"]:
-                            # Le message a été envoyé par la logique de fallback dans get_bot_response
+                            # Le message a été envoyé par la logique de fallback (Malagasy)
                             return "OK", 200
                             
                         if response_text and response_text not in ["QR_SENT"]:
