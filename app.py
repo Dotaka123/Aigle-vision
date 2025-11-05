@@ -2,7 +2,7 @@ import os
 import requests
 import json
 import uuid
-import random # Ajout de random car il était dans le code précédent mais manquant ici
+import random 
 from flask import Flask, request, jsonify
 
 # --- CONFIGURATION & JETONS ---
@@ -11,44 +11,44 @@ VERIFY_TOKEN = os.environ.get('VERIFY_TOKEN', 'tata')
 PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBP8akgjumyPKeBTZBZCq6updYBcX8EXEqjQTdZBYZCLEbTfpyBot6dqiAUixLajtwti0H20hQb4cZCWoaWqXVsmAFD4ZAFxzZAVAT8UBl9BN3xuLI2ZCE0OlQ3OpJbmeLlVfMKlPT1DDeYybycKPZB43tLMSFTFVrZB1CyG3dtl6pyqInHwcQ8a95ms1T0jJzAOgd0Xh7wCZA1w4PQZDZD')
 PAGE_NAME = "Aigle Vision Mada"
 EXTERNAL_API_URL = "https://rest-api-o42n.onrender.com/api/chatgpt5"
-QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/" # API QR Code
+QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/" 
 
-# ID FACEBOOK DE L'ADMINISTRATEUR
-ADMIN_SENDER_ID = os.environ.get('ADMIN_ID', 'VOTRE_ADMIN_ID_NUMERIQUE')
-# Prompt système ajouté car il est utilisé dans call_external_api
+# ID FACEBOOK DE L'ADMINISTRATEUR (VÉRIFIEZ ABSOLUMENT CET ID POUR CORRIGER L'ERREUR 400)
+ADMIN_SENDER_ID = os.environ.get('ADMIN_ID', '100039040104071')
 BASE_SYSTEM_PROMPT = f"Tu es le bot amical de {PAGE_NAME}. Tu proposes des formations en travail en ligne et des proxys de qualité à prix abordable."
 
-# --- DONNÉES ET TARIFS (VALEURS MODIFIÉES) ---
-# NOUVELLE VALEUR : 120 000 Ar
-FORMATION_COST_AR = 120000
-# NOUVELLE VALEUR : 60 000 Ar
-PASSPORT_COST_AR = 60000
-# NOUVELLE VALEUR : 55 000 Ar
-PROXY_COST_AR = 55000
+# --- DONNÉES ET TARIFS (VALEURS MISES À JOUR) ---
+FORMATION_COST_AR = 120000 # Nouveau prix: 120 000 Ar
+PASSPORT_COST_AR = 40000  # Nouveau prix: 40 000 Ar
+PROXY_COST_AR = 47000     # Nouveau prix: 47 000 Ar
 PROXY_PRICE_DISPLAY = f"{PROXY_COST_AR:,} Ar (pour un proxy résidentiel, 1 mois)"
 
-# Ajout des fallbacks pour l'IA, car ils sont nécessaires à la fonction get_bot_response
+# --- MESSAGE DE BIENVENUE EN MALGACHE ---
+WELCOME_MESSAGE_MG = (
+    "Tongasoa eto amin'ny pejy **Aigle Vision Mada**! 🦅\n\n"
+    "Manolotra **fiofanana feno momba ny Surveys sy Micro-tâches** izahay, hahafahanao miasa sy mahazo vola amin'ny aterineto. Vonona hanampy anao izahay. **Ato ianao dia afaka mahazo karama 3$ - 10$ isan'andro.**\n\n"
+    "Kitiho ny bokotra **\"Offres\"** hijerena ny antsipiriany!" 
+)
+
+# Réponses de repli en Malgache en cas d'échec de l'IA externe
 MALAGASY_FALLBACK_RESPONSES = [
     "Aigle Vision Mada no vahaolana ho an'ny asa an-tserasera! Miantsena Proxy haingana sy azo antoka eto.",
     "Tadidio fa manome fiofanana manokana momba ny surveys sy micro-tâches izahay ao amin'ny Aigle Vision Mada. Tsy maintsy miezaka ianao!",
     "Te hahazo vola amin'ny internet? Aigle Vision Mada manome ny teknika rehetra ilainao. Afaka manomboka ianao izao.",
 ]
 
-
 # --- ÉTATS DE SESSION ---
-user_session_state = {}
+user_session_state = {} 
 
 app = Flask(__name__)
 
 # --- DÉFINITION DES ÉTAPES DU FORMULAIRE (TEXTES MIS À JOUR) ---
 FORM_PASSPORT = {
     "start_field": "nom_prenom",
-    # TEXTE MIS À JOUR
     "start_question": f"Pour la création de votre passeport de vérification d'identité ({PASSPORT_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
     "steps": [
         ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
         ("adresse", "Quelle est votre **Adresse** complète ?", ),
-        # TEXTE MIS À JOUR
         ("confirmation", f"Merci ! Veuillez confirmer la demande de passeport ({PASSPORT_COST_AR:,} Ar) : (OUI pour valider)"),
     ],
     "end_message": "DEMANDE DE PASSEPORT"
@@ -57,13 +57,11 @@ FORM_PASSPORT = {
 FORM_STEPS = {
     "FORM_FORMATION": {
         "start_field": "nom_prenom",
-        # TEXTE MIS À JOUR
         "start_question": f"Parfait ! Pour l'inscription à la formation ({FORMATION_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
         "steps": [
             ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
             ("adresse", "Quelle est votre **Adresse** complète ?", ),
             ("competence", "Avez-vous de l'expérience concernant les **sondages en ligne** ? (Oui/Non ou précisez vos compétences)"),
-            # TEXTE MIS À JOUR
             ("confirmation", f"Merci ! Veuillez confirmer votre inscription ({FORMATION_COST_AR:,} Ar) : (OUI pour valider)"),
         ],
         "end_message": "INSCRIPTION FORMATION"
@@ -74,7 +72,6 @@ FORM_STEPS = {
         "steps": [
             ("adresse", "Quelle est votre **Adresse** de facturation/livraison ?", ),
             ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
-            # TEXTE MIS À JOUR
             ("nombre_proxy", f"Combien de **Proxys Résidentiels (1 mois)** souhaitez-vous commander ? (Prix unitaire: {PROXY_COST_AR:,} Ar)"),
             ("confirmation", "Merci ! Veuillez confirmer votre commande : (OUI pour valider)"),
         ],
@@ -88,7 +85,7 @@ FORM_STEPS = {
 
 def send_message_to_admin(admin_id, message_text):
     """Envoie un message de notification à l'administrateur."""
-    if admin_id == '61578118223914':
+    if admin_id == 'VOTRE_ADMIN_ID_NUMERIQUE':
         print("\n--- ATTENTION : L'ID ADMIN n'est pas configuré. Le message est imprimé localement. ---\n")
         print(message_text)
         return False
@@ -105,7 +102,8 @@ def send_message_to_admin(admin_id, message_text):
         response.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
-        print(f"Erreur lors de l'envoi de la notification admin : {e}")
+        print(f"!!! Échec de l'envoi de la notification admin (Erreur 400 ou autre) : {e}")
+        print("!!! VÉRIFIEZ L'ADMIN_SENDER_ID : IL DOIT ÊTRE L'ID NUMÉRIQUE FACEBOOK D'UN DÉVELOPPEUR/TESTEUR AYANT EU UNE CONVERSATION AVEC LE BOT.")
         return False
 
 def send_message(recipient_id, message_text, current_state="AI"):
@@ -113,9 +111,8 @@ def send_message(recipient_id, message_text, current_state="AI"):
     
     if current_state != "HUMAN":
         quick_replies = [
+            # Bouton "Faire une formation" retiré d'ici pour n'apparaître que dans les Offres
             {"content_type": "text", "title": "Offres", "payload": "SHOW_OFFERS_MENU"},
-            # Ajout du bouton Formation car il est un chemin essentiel de l'offre
-            {"content_type": "text", "title": "Faire une formation", "payload": "OFFER_FORMATION_INFO"}, 
             {"content_type": "text", "title": "Parler à une personne", "payload": "HUMAN_AGENT"},
         ]
     else:
@@ -183,7 +180,7 @@ def handle_offers_menu(sender_id):
     offers_replies = [
         {"content_type": "text", "title": "Créer un passeport", "payload": "START_FORM_PASSPORT"},
         {"content_type": "text", "title": "Acheter un proxy", "payload": "START_FORM_PROXY"},
-        {"content_type": "text", "title": "Faire une formation", "payload": "OFFER_FORMATION_INFO"},
+        {"content_type": "text", "title": "Faire une formation", "payload": "OFFER_FORMATION_INFO"}, 
     ]
     
     message_data = {
@@ -213,7 +210,6 @@ def call_external_api(query, sender_id):
         data = response.json()
         return data.get("result", random.choice(MALAGASY_FALLBACK_RESPONSES))
     except requests.exceptions.RequestException as e:
-        # Retourne un message de repli en cas d'erreur réseau/API
         return random.choice(MALAGASY_FALLBACK_RESPONSES)
 
 
@@ -299,7 +295,6 @@ def handle_form_input(sender_id, message_text):
                 
                 # --- ENVOI DU RÉCAPITULATIF À L'UTILISATEUR ---
                 user_recap_message = recap_message
-                # Les remplacements sont adaptés pour utiliser les nouvelles variables de coût
                 user_recap_message = user_recap_message.replace(f"🎉 NOUVELLE INSCRIPTION FORMATION - {PAGE_NAME} (COÛT: {FORMATION_COST_AR:,} Ar) 🎉", "🎉 **Votre Inscription est enregistrée !**")
                 user_recap_message = user_recap_message.replace(f"🛒 NOUVELLE COMMANDE PROXY - {PAGE_NAME} 🛒", "🛒 **Votre Commande est enregistrée !**")
                 user_recap_message = user_recap_message.replace(f"🛂 NOUVELLE DEMANDE PASSEPORT ID - {PAGE_NAME} (COÛT: {PASSPORT_COST_AR:,} Ar) 🛂", "🛂 **Votre Demande de Passeport est enregistrée !**")
@@ -361,7 +356,6 @@ def get_bot_response(message_text, sender_id):
     # --- GESTION DES BOUTONS D'OFFRE : FORMATION (Description détaillée + Bouton d'inscription) ---
     if "offer_formation_info" == message_text_lower:
         
-        # TEXTES MIS À JOUR
         message_text = (
             f"🎓 **FORMATION SONDAGES RÉMUNÉRÉS : Le Guide Complet** 🎓\n"
             f"**Tarif : {FORMATION_COST_AR:,} Ar (Formation en ligne)**\n"
@@ -386,7 +380,6 @@ def get_bot_response(message_text, sender_id):
     
     # --- GESTION DES BOUTONS D'OFFRE : PASSEPORT (Description détaillée) ---
     if "offer_passport_info" == message_text_lower:
-        # TEXTES MIS À JOUR
         return (
             f"🛂 **CRÉATION DE PASSEPORT DE VÉRIFICATION D'IDENTITÉ** 🛂\n"
             f"**Tarif : {PASSPORT_COST_AR:,} Ar**\n"
@@ -395,7 +388,7 @@ def get_bot_response(message_text, sender_id):
             "Cliquez sur 'Offres' puis 'Créer un passeport' pour lancer la procédure de commande et enregistrer vos informations."
         )
     
-    # --- ANCIENS CHEMINS DE RÉPONSE RAPIDE (TEXTE MIS À JOUR) ---
+    # --- ANCIENS CHEMINS DE RÉPONSE RAPIDE ---
     if "tarif proxy" in message_text_lower or "prix proxy" in message_text_lower:
         return f"Le tarif pour un proxy résidentiel pour 1 mois est de **{PROXY_PRICE_DISPLAY}**. Cliquez sur 'Offres' puis 'Acheter un proxy' pour lancer la commande !"
     
@@ -449,10 +442,9 @@ def handle_messages():
 
                     current_session_state = user_session_state[sender_id]['state']
 
-                    # 0. GESTION DU MESSAGE DE BIENVENUE (POSTBACK GET_STARTED - Ajout de cette logique pour une implémentation complète)
+                    # 0. GESTION DU MESSAGE DE BIENVENUE (POSTBACK GET_STARTED)
                     if postback and postback.get("payload") in ["GET_STARTED_PAYLOAD", "GET_STARTED"]:
-                        welcome_message = "Tongasoa eto amin'ny pejy **Aigle Vision Mada**! 🦅\nKitiho ny bokotra **\"Offres\"** hijerena ny antsipiriany!"
-                        send_message(sender_id, welcome_message, current_state="AI")
+                        send_message(sender_id, WELCOME_MESSAGE_MG, current_state="AI")
                         return "OK", 200
 
                     # 1. GESTION DES COMMANDES DE CONTRÔLE (HUMAN/AI)
