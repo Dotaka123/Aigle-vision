@@ -2,14 +2,13 @@ import os
 import requests
 import json
 import uuid
+import random # NOUVEAU: Import pour les réponses aléatoires
 from flask import Flask, request, jsonify
-# Nécessite 'furl' dans requirements.txt pour la construction de l'URL QR
-from furl import furl 
 
 # --- CONFIGURATION & JETONS ---
 # REMPLACEZ CES VALEURS PAR VOS JETONS RÉELS
 VERIFY_TOKEN = os.environ.get('VERIFY_TOKEN', 'tata')
-PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBPZBccglgG0GuViPKTSxldQsBjMXbDf68ZCY4ZApZAuV2Wo8kwMnBoUqZCmQR0fOAGN5IZAhujkjtzbrGxQkCm5BZAnqXiZBnYsXEVZAdHi7JQSk7bUaKOTqru7K4wzl3XfUiGtgqfwx2CyvIay8PvrWL5JLAwgJ52BbZCE3q7v2SAQNZBbBPjP4ZCUHxMkD7mLimWfQsBGZCYf2dh5QZDZD')
+PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBP2XhtMRszFhJ2Suqxyt0dfHKjxr66CwHO6rnb0DVs5l56CHQxWpqZCaGd71Sraw7I7s1JUaf8Dn8d043sGBgNp0JmYGZBhT4nGibcK1TrLdCZArYVwQKoEMaB9EC7GrQZBHxTiFTOwiEc2j7ugESKEfCkCmAGQZAjMPPF9hvnRQQ27ZBTYsTZBrIw4kdxZCRisXlye9Vsvn7pgZDZD')
 PAGE_NAME = "Aigle Vision Mada"
 EXTERNAL_API_URL = "https://rest-api-o42n.onrender.com/api/chatgpt5"
 QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/" 
@@ -18,33 +17,41 @@ QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/"
 ADMIN_SENDER_ID = os.environ.get('ADMIN_ID', 'VOTRE_ADMIN_ID_NUMERIQUE')
 BASE_SYSTEM_PROMPT = f"Tu es le bot amical de {PAGE_NAME}. Tu proposes des formations en travail en ligne et des proxys de qualité à prix abordable."
 
-# --- DONNÉES ET TARIFS (MIS À JOUR) ---
+# --- DONNÉES ET TARIFS ---
 PROXY_PRICE_DISPLAY = "47 000 Ar (pour un proxy résidentiel, 1 mois)"
 PROXY_COST_AR = 47000 
 FORMATION_COST_AR = 120000 
 PASSPORT_COST_AR = 40000 
+
+# --- MESSAGE DE BIENVENUE EN MALGACHE ---
+WELCOME_MESSAGE_MG = (
+    "Tongasoa eto amin'ny pejy **Aigle Vision Mada**! 🦅\n\n"
+    "Manolotra **fiofanana feno momba ny Surveys sy Micro-tâches** izahay, hahafahanao miasa sy mahazo vola amin'ny aterineto. Vonona hanampy anao izahay. **Ato ianao dia afaka mahazo karama 3$ - 10$ isan'andro.**\n\n"
+    "Kitiho ny bokotra **\"Offres\"** na **\"Faire une formation\"** hijerena ny antsipiriany!"
+)
+
+# NOUVEAU: Réponses de repli en Malgache en cas d'échec de l'IA externe
+MALAGASY_FALLBACK_RESPONSES = [
+    "Aigle Vision Mada no vahaolana ho an'ny asa an-tserasera! Miantsena Proxy haingana sy azo antoka eto.",
+    "Tadidio fa manome fiofanana manokana momba ny surveys sy micro-tâches izahay ao amin'ny Aigle Vision Mada. Tsy maintsy miezaka ianao!",
+    "Te hahazo vola amin'ny internet? Aigle Vision Mada manome ny teknika rehetra ilainao. Afaka manomboka ianao izao.",
+    "Miaraka amin'ny Aigle Vision Mada, miantoka ny fahombiazanao amin'ny asa an-tserasera izahay. Andramo ny tolotray fa tsy ho diso fanantenana ianao!",
+    "Miomana amin'ny fahaleovan-tena ara-bola miaraka amin'ny fampianarana an-tserasera avy amin'ny Aigle Vision Mada. Tsy misy sarotra atsy!",
+    "Aigle Vision Mada - Miaraka aminao amin'ny fanatrarana ny tanjonao ara-bola!"
+]
 
 # --- ÉTATS DE SESSION ---
 user_session_state = {} 
 
 app = Flask(__name__)
 
-# --- MESSAGE DE BIENVENUE EN MALGACHE ---
-WELCOME_MESSAGE_MG = (
-    "Tongasoa eto amin'ny pejy **Aigle Vision Mada**! 🦅\n\n"
-    "Manolotra **fiofanana feno momba ny Survey sy Microtache** izahay, hahafahanao miasa sy mahazo vola amin'ny aterineto. Vonona hanampy anao izahay.\n\n"
-    "Kitiho ny bokotra **\"Offres\"** na **\"Formation\"** hijerena ny antsipiriany!"
-)
-
 # --- DÉFINITION DES ÉTAPES DU FORMULAIRE ---
 FORM_PASSPORT = {
     "start_field": "nom_prenom",
-    # Montant mis à jour dans la question
     "start_question": f"Pour la création de votre passeport de vérification d'identité ({PASSPORT_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
     "steps": [
         ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
         ("adresse", "Quelle est votre **Adresse** complète ?", ),
-        # Montant mis à jour dans la confirmation
         ("confirmation", f"Merci ! Veuillez confirmer la demande de passeport ({PASSPORT_COST_AR:,} Ar) : (OUI pour valider)"),
     ],
     "end_message": "DEMANDE DE PASSEPORT"
@@ -53,13 +60,11 @@ FORM_PASSPORT = {
 FORM_STEPS = {
     "FORM_FORMATION": {
         "start_field": "nom_prenom",
-        # Montant mis à jour dans la question
         "start_question": f"Parfait ! Pour l'inscription à la formation ({FORMATION_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
         "steps": [
             ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
             ("adresse", "Quelle est votre **Adresse** complète ?", ),
             ("competence", "Avez-vous de l'expérience concernant les **sondages en ligne** ? (Oui/Non ou précisez vos compétences)"),
-            # Montant mis à jour dans la confirmation
             ("confirmation", f"Merci ! Veuillez confirmer votre inscription ({FORMATION_COST_AR:,} Ar) : (OUI pour valider)"),
         ],
         "end_message": "INSCRIPTION FORMATION"
@@ -83,7 +88,7 @@ FORM_STEPS = {
 
 def send_message_to_admin(admin_id, message_text):
     """Envoie un message de notification à l'administrateur."""
-    if admin_id == 'VOTRE_ADMIN_ID_NUMERIQUE':
+    if admin_id == '100039040104071':
         print("\n--- ATTENTION : L'ID ADMIN n'est pas configuré. Le message est imprimé localement. ---\n")
         print(message_text)
         return False
@@ -129,7 +134,7 @@ def send_message(recipient_id, message_text, current_state="AI"):
 
 def upload_and_send_image(recipient_id, image_url):
     """
-    Télécharge le QR code en mémoire et l'uploade sur Facebook pour contourner robots.txt.
+    Télécharge le QR code en mémoire et l'uploade sur Facebook.
     """
     print(f"--- Tentative d'upload du QR Code depuis {image_url} ---")
     
@@ -192,6 +197,62 @@ def handle_offers_menu(sender_id):
     
     return "OK"
 
+def send_formation_offer(sender_id):
+    """Envoie le message détaillé de la formation avec le bouton d'inscription."""
+    # TEXTE DE DESCRIPTION DE LA FORMATION EN MALGACHE (avec mise en forme)
+    message_text = (
+        "💰 **FIOFANANA SURVEYS SY MICRO-TÂCHES** 💰\n\n"
+        "Raha mahazo ny teny **Frantsay na Anglisy** dia ity ny asa tena mety @nao.\n\n"
+        f"**Frais de formation: {FORMATION_COST_AR:,} Ar (Présentiel ou en ligne)**\n\n" 
+        "Ny surveys sy ny Micro-tâches dia anisan'ireo asa tsara karama ary azahoana **3$ - 10$ / jour** raha ampy information sy technique ho entina manao azy ianao.\n\n"
+        "Tsy mila compétence sy diplôma, ary tsy sarotra tompoko ny surveys. Ny valiny ihany koa dia efa omeny eo fa isika no misafidy, ka ny **Paik'ady** no mila ananana.\n\n"
+        "Tsy misy fetra ny fotoana iasana, fa izay tianao afaka miasa **24h/24h ary 7j/7j**.\n\n"
+        "**Zavatra ilaiana raha te hanao ilay asa:**\n"
+        "* 📱 Téléphone ou Ordinateur\n"
+        "* 🌐 Connexion Internet (Data mobile na Wi-Fi)\n\n"
+        "**Programme de Formation Complet (de A à Z) sur Timebucks USA sy d'autres Plate-forme:**\n"
+        "1. Introduction & Bases fondamentales\n"
+        "2. Création Gmail sans numéro illimité\n"
+        "3. Tous les outils nécessaires\n"
+        "4. Bases fondamentales sy achat de Proxy\n"
+        "5. Test sy installation de Proxy\n"
+        "6. Procédure de création des comptes USA Timebucks sy d'autres Plate-forme\n"
+        "7. Procédure de création Profil surveys optimisé\n"
+        "8. Simulation des travaux avec stratégies\n"
+        "9. Création Portefeuille électronique & Vérification KYC\n"
+        "10. Les démarches de retrait\n"
+        "11. Bonus, Compte, Proxy, ID étrangère\n"
+        "**Miasa avy hatrany rehefa vita ny formation!**\n\n"
+        "**Types de formation:**\n"
+        "| Ligne | Date/Heure | Lieu/Note |\n"
+        "|:---|:---|:---|\n"
+        "| **En Ligne** | 9h-12h, 14h-18h / Spécial nuit 21h+ | Par appel vidéo, live |\n"
+        "| **Présentiel** | 8 - 20 Nov. 2025 | FIANARANTSOA (Andrainjato) |\n"
+        "| **Présentiel** | 22 Nov. 2025 | ANTSIRABE (Limité 10 personnes) |\n"
+        "| **Présentiel** | 29 Nov. 2025 | ANTANANARIVO (Limité 20 personnes) |\n"
+        "| **Présentiel** | 6 Déc. 2025 | MORONDAVA (Limité 10 personnes) |\n\n"
+        "**✅ Avec suivi illimité!**\n"
+        "**✅ Garantie:** Compte vérifié KYC et retrait succès.\n"
+        "Aza tara misoratra anarana sy manao réservation fa sao feno ny toerana.\n"
+        "**Fisoratanana anarana sy Fakana fanazavana fanampiny any amin'ny Mp, WhatsApp, Appel direct, na Manatona mivantana aty Andrainjato hoan'ny eto Fianarantsoa**\n"
+        "**Contact: 038 49 115 97 (WhatsApp)**"
+    )
+    
+    quick_replies = [
+        {"content_type": "text", "title": "S'inscrire à la formation", "payload": "START_FORM_FORMATION"},
+    ]
+    
+    # Envoi du message détaillé
+    message_data = {
+        "recipient": {"id": sender_id},
+        "message": {
+            "text": message_text,
+            "quick_replies": quick_replies
+        }
+    }
+    url = f"https://graph.facebook.com/v18.0/me/messages?access_token={PAGE_ACCESS_TOKEN}"
+    requests.post(url, json=message_data)
+
 
 def call_external_api(query, sender_id):
     """Fait un appel HTTP à l'API externe pour obtenir une réponse IA."""
@@ -206,7 +267,8 @@ def call_external_api(query, sender_id):
         data = response.json()
         return data.get("result", "Je suis désolé, l'IA externe n'a pas pu générer de réponse pour l'instant.")
     except requests.exceptions.RequestException as e:
-        return "🤖 Je rencontre un problème technique pour la réponse complexe. Veuillez réessayer plus tard."
+        # MODIFICATION : Retourne une phrase aléatoire en malgache
+        return random.choice(MALAGASY_FALLBACK_RESPONSES)
 
 
 # --- LOGIQUE DU FORMULAIRE ---
@@ -296,11 +358,12 @@ def handle_form_input(sender_id, message_text):
                 
                 send_message(sender_id, user_recap_message, current_state="AI") 
 
-                # --- GÉNÉRATION ET ENVOI DU QR CODE (avec furl) ---
-                qr_code_url = furl(QR_API_URL).add({
+                # --- GÉNÉRATION ET ENVOI DU QR CODE ---
+                qr_params = {
                     "size": "150x150",
                     "data": qr_data
-                }).url
+                }
+                qr_code_url = requests.Request('GET', QR_API_URL, params=qr_params).prepare().url
                 
                 upload_and_send_image(sender_id, qr_code_url)
                 
@@ -345,65 +408,12 @@ def get_bot_response(message_text, sender_id):
     """Décide si la réponse est prédéfinie (tarifs/services) ou générée par l'IA."""
     message_text_lower = message_text.lower()
     
-    # --- GESTION DES BOUTONS D'OFFRE : FORMATION (Message très détaillé en Malgache) ---
+    # --- GESTION DES BOUTONS D'OFFRE : FORMATION (Utilise la fonction dédiée) ---
     if "offer_formation_info" == message_text_lower: 
-        
-        # NOUVEAU TEXTE DE DESCRIPTION DE LA FORMATION EN MALGACHE (avec mise en forme)
-        message_text = (
-            "💰 **FIOFANANA SURVEYS SY MICRO-TÂCHES** 💰\n\n"
-            "Raha mahazo ny teny **Frantsay na Anglisy** dia ity ny asa tena mety @nao.\n\n"
-            "Ny surveys sy ny Micro-tâches dia anisan'ireo asa tsara karama ary azahoana **3$ - 10$ / jour** raha ampy information sy technique ho entina manao azy ianao.\n\n"
-            "Tsy mila compétence sy diplôma, ary tsy sarotra tompoko ny surveys. Ny valiny ihany koa dia efa omeny eo fa isika no misafidy, ka ny **Paik'ady** no mila ananana.\n\n"
-            "Tsy misy fetra ny fotoana iasana, fa izay tianao afaka miasa **24h/24h ary 7j/7j**.\n\n"
-            "**Zavatra ilaiana raha te hanao ilay asa:**\n"
-            "* 📱 Téléphone ou Ordinateur\n"
-            "* 🌐 Connexion Internet (Data mobile ou Wi-Fi)\n\n"
-            "**Programme de Formation Complet (de A à Z) sur Timebucks USA sy d'autres Plate-forme:**\n"
-            "1. Introduction & Bases fondamentales\n"
-            "2. Création Gmail sans numéro illimité\n"
-            "3. Tous les outils nécessaires\n"
-            "4. Bases fondamentales sy achat de Proxy\n"
-            "5. Test sy installation de Proxy\n"
-            "6. Procédure de création des comptes USA Timebucks sy d'autres Plate-forme\n"
-            "7. Procédure de création Profil surveys optimisé\n"
-            "8. Simulation des travaux avec stratégies\n"
-            "9. Création Portefeuille électronique & Vérification KYC\n"
-            "10. Les démarches de retrait\n"
-            "11. Bonus, Compte, Proxy, ID étrangère\n"
-            "**Miasa avy hatrany rehefa vita ny formation!**\n\n"
-            "**Types de formation:**\n"
-            "| Ligne | Date/Heure | Lieu/Note |\n"
-            "|:---|:---|:---|\n"
-            "| **En Ligne** | 9h-12h, 14h-18h / Spécial nuit 21h+ | Par appel vidéo, live |\n"
-            "| **Présentiel** | 8 - 20 Nov. 2025 | FIANARANTSOA (Andrainjato) |\n"
-            "| **Présentiel** | 22 Nov. 2025 | ANTSIRABE (Limité 10 personnes) |\n"
-            "| **Présentiel** | 29 Nov. 2025 | ANTANANARIVO (Limité 20 personnes) |\n"
-            "| **Présentiel** | 6 Déc. 2025 | MORONDAVA (Limité 10 personnes) |\n\n"
-            "**✅ Avec suivi illimité!**\n"
-            "**✅ Garantie:** Compte vérifié KYC et retrait succès.\n"
-            f"**💰 Frais de formation: {FORMATION_COST_AR:,} Ar (Présentiel ou en ligne)**\n\n"
-            "Aza tara misoratra anarana sy manao réservation fa sao feno ny toerana.\n"
-            "**Fisoratanana anarana sy Fakana fanazavana fanampiny any amin'ny Mp, WhatsApp, Appel direct, na Manatona mivantana aty Andrainjato hoan'ny eto Fianarantsoa**\n"
-            "**Contact: 038 49 115 97 (WhatsApp)**"
-        )
-        
-        quick_replies = [
-            {"content_type": "text", "title": "S'inscrire à la formation", "payload": "START_FORM_FORMATION"},
-        ]
-        
-        # Envoi du message détaillé
-        message_data = {
-            "recipient": {"id": sender_id},
-            "message": {
-                "text": message_text,
-                "quick_replies": quick_replies
-            }
-        }
-        url = f"https://graph.facebook.com/v18.0/me/messages?access_token={PAGE_ACCESS_TOKEN}"
-        requests.post(url, json=message_data)
-        return ""
+        send_formation_offer(sender_id) 
+        return "HANDLED_INTERNALLY" 
     
-    # --- GESTION DES BOUTONS D'OFFRE : PASSEPORT (Description détaillée) ---
+    # --- GESTION DES BOUTONS D'OFFRE : PASSEPORT (Retourne le texte) ---
     if "offer_passport_info" == message_text_lower: 
         return (
             f"🛂 **CRÉATION DE PASSEPORT DE VÉRIFICATION D'IDENTITÉ** 🛂\n"
@@ -419,7 +429,13 @@ def get_bot_response(message_text, sender_id):
     
     # Si le message n'est pas vide et ne correspond à aucun mot-clé/payload, on appelle l'IA
     if message_text.strip():
-        return call_external_api(message_text, sender_id)
+        response = call_external_api(message_text, sender_id)
+        # Si la réponse est en Malgache, cela signifie qu'une erreur s'est produite (selon la logique de call_external_api)
+        if response in MALAGASY_FALLBACK_RESPONSES:
+            # On envoie le message directement dans la logique POST car c'est un fallback
+            send_message(sender_id, response, current_state="AI")
+            return "HANDLED_INTERNALLY"
+        return response
     return "" 
 
 
@@ -467,6 +483,11 @@ def handle_messages():
                         message_text = ""
 
                     current_session_state = user_session_state[sender_id]['state']
+                    
+                    # 0. GESTION DU MESSAGE DE BIENVENUE (POSTBACK GET_STARTED)
+                    if postback and postback.get("payload") in ["GET_STARTED_PAYLOAD", "GET_STARTED"]:
+                        send_message(sender_id, WELCOME_MESSAGE_MG, current_state="AI")
+                        return "OK", 200
 
                     # 1. GESTION DES COMMANDES DE CONTRÔLE (HUMAN/AI)
                     if payload in ["HUMAN_AGENT", "AI_AGENT"]:
@@ -503,11 +524,15 @@ def handle_messages():
                     if current_session_state == "HUMAN":
                         return "OK", 200
 
-                    # 4. RÉPONSE AUX BOUTONS D'OFFRE (OFFER_*) OU FORMULAIRE EN COURS
-                    
+                    # 4. RÉPONSE AUX BOUTONS D'OFFRE (OFFER_*) 
                     if current_session_state == "AI" and payload in ["OFFER_PASSPORT_INFO", "OFFER_FORMATION_INFO"]:
-                        # Utilisez le payload pour que get_bot_response sache quelle info afficher
-                        get_bot_response(payload, sender_id) 
+                        response_text = get_bot_response(payload, sender_id)
+                        
+                        if response_text == "HANDLED_INTERNALLY":
+                            return "OK", 200 
+                        
+                        if response_text: # Gère le cas du Passeport
+                            send_message(sender_id, response_text, current_state="AI")
                         return "OK", 200
                         
                     if current_session_state.startswith("FORM_"):
@@ -519,7 +544,12 @@ def handle_messages():
                     # 5. RÉPONSE IA GÉNÉRALE
                     if message_text.strip(): 
                         response_text = get_bot_response(message_text, sender_id)
-                        if response_text and response_text != "QR_SENT":
+                        
+                        if response_text in ["HANDLED_INTERNALLY"]:
+                            # Le message a été envoyé par la logique de fallback dans get_bot_response
+                            return "OK", 200
+                            
+                        if response_text and response_text not in ["QR_SENT"]:
                             send_message(sender_id, response_text, current_state="AI")
                         return "OK", 200
                         
