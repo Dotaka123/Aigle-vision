@@ -43,6 +43,22 @@ PASSPORT_COST_AR = 40000
 PROXY_COST_AR = 47000 
 PROXY_PRICE_DISPLAY = f"{PROXY_COST_AR:,} Ar (pour un proxy résidentiel, 1 mois)"
 
+# --- DONNÉES DES SESSIONS PRÉSENTIELLES (AJOUTÉ POUR LES BOUTONS) ---
+PRESENTIEL_LOCATIONS = {
+    "FNA_NOV_25": {"title": "FIANARANTSOA (8-15 Nov)", "location": "FIANARANTSOA (8-15 Novembre 2025, Andrainjato)"},
+    "ATS_NOV_25": {"title": "ANTSIRABE (22 Nov)", "location": "ANTSIRABE (22 Novembre 2025)"},
+    "TANA_NOV_25": {"title": "ANTANANARIVO (29 Nov)", "location": "ANTANANARIVO (29 Novembre 2025)"},
+    "MRD_DEC_25": {"title": "MORONDAVA (6 Déc)", "location": "MORONDAVA (6 Décembre 2025)"},
+}
+
+PRESENTIEL_LOCATIONS_DISPLAY = (
+    "📍FIANARANTSOA (Limité 10) - 8-15 nov. 2025 (Andrainjato)\n"
+    "📍ANTSIRABE (Limité 10) - 22 Nov. 2025\n"
+    "📍ANTANANARIVO (Limité 20) - 29 Nov. 2025\n"
+    "📍MORONDAVA (Limité 10) - 6 Déc. 2025\n"
+)
+# ----------------------------------------------------------------------
+
 # --- MESSAGE DE BIENVENUE EN MALGACHE ---
 WELCOME_MESSAGE_MG = (
     "Tongasoa eto amin'ny pejy **Aigle Vision Mada**! 🦅\n\n"
@@ -57,12 +73,12 @@ MALAGASY_FALLBACK_RESPONSES = [
     "Te hahazo vola amin'ny internet? Aigle Vision Mada manome ny teknika rehetra ilainao. Afaka manomboka ianao izao.",
 ]
 
-# --- ÉTATS DE SESSION (En mémoire, non persistant) ---
+# --- ÉTATS DE SESSION (En mémoire) ---
 user_session_state = {}
 
 app = Flask(__name__)
 
-# --- DÉFINITION DES ÉTAPES DU FORMULAIRE (MIS À JOUR) ---
+# --- DÉFINITION DES ÉTAPES DU FORMULAIRE (MIS À JOUR AVEC LE NOUVEAU FLUX PRÉSENTIEL) ---
 
 FORM_PASSPORT = {
     "start_field": "nom_prenom",
@@ -76,7 +92,7 @@ FORM_PASSPORT = {
 }
 
 FORM_STEPS = {
-    "FORM_FORMATION_ONLINE": { # NOUVEAU : EN LIGNE
+    "FORM_FORMATION_ONLINE": { 
         "start_field": "nom_prenom",
         "start_question": f"Parfait ! Pour l'inscription à la formation EN LIGNE ({FORMATION_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
         "steps": [
@@ -88,11 +104,12 @@ FORM_STEPS = {
         "end_message": "INSCRIPTION FORMATION EN LIGNE"
     },
     
-    "FORM_FORMATION_PRESENTIEL": { # NOUVEAU : PRÉSENTIEL
+    # FORMULAIRE PRÉSENTIEL : DÉMARRE APRÈS LA SÉLECTION DU LIEU/DATE
+    "FORM_FORMATION_PRESENTIEL": { 
         "start_field": "nom_prenom",
-        "start_question": f"Parfait ! Pour l'inscription à la formation PRÉSENTIEL ({FORMATION_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
+        # [LIEU_CHOISI] sera remplacé dynamiquement après le choix du bouton de lieu
+        "start_question": f"Merci d'avoir choisi le présentiel à [LIEU_CHOISI] ! Quel est votre **Nom et Prénom** pour cette inscription ({FORMATION_COST_AR:,} Ar) ?",
         "steps": [
-            ("lieu_presentiel", "Quel est le **Lieu** et la **Date** que vous souhaitez réserver ? (Ex: FIANARANTSOA 8-15 Nov / ANTSIRABE 22 Nov / ANTANANARIVO 29 Nov / MORONDAVA 6 Déc)"),
             ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
             ("adresse", "Quelle est votre **Adresse** complète ?", ),
             ("competence", "Avez-vous de l'expérience concernant les **sondages en ligne** ? (Oui/Non ou précisez vos compétences)"),
@@ -287,10 +304,15 @@ def handle_form_input(sender_id, message_text):
                 cost = 0
                 if form_type_key.startswith("FORMATION"):
                     cost = FORMATION_COST_AR
+                    
+                    # Logique pour inclure ou non le lieu_presentiel
+                    location_detail = f"Type: **{'PRÉSENTIEL' if 'PRESENTIEL' in form_type_key else 'EN LIGNE'}**\n"
+                    if 'PRESENTIEL' in form_type_key:
+                         location_detail += f"Lieu Réservé: {data.get('lieu_presentiel', 'N/A')}\n"
+                         
                     recap_message = (
                         f"🎉 NOUVELLE {form_config['end_message']} - {PAGE_NAME} (COÛT: {cost:,} Ar) 🎉\n"
-                        f"Type: **{'PRÉSENTIEL' if 'PRESENTIEL' in form_type_key else 'EN LIGNE'}**\n"
-                        f"{f'Lieu Réservé: {data.get("lieu_presentiel", "N/A")}\n' if 'PRESENTIEL' in form_type_key else ''}"
+                        f"{location_detail}"
                         f"Nom: **{data.get('nom_prenom', 'N/A')}**\n"
                         f"Numéro de mobile: {data.get('numero_mobile', 'N/A')}\n"
                         f"Adresse: {data.get('adresse', 'N/A')}\n"
@@ -340,9 +362,12 @@ def handle_form_input(sender_id, message_text):
                 user_recap_message = user_recap_message.replace(f"🎉 NOUVELLE INSCRIPTION FORMATION PRÉSENTIEL - {PAGE_NAME} (COÛT: {FORMATION_COST_AR:,} Ar) 🎉", "🎉 **Votre Inscription PRÉSENTIEL est enregistrée !**")
                 user_recap_message = user_recap_message.replace(f"🛒 NOUVELLE COMMANDE PROXY - {PAGE_NAME} (COÛT ESTIMÉ: {cost:,.0f} Ar) 🛒", "🛒 **Votre Commande est enregistrée !**")
                 user_recap_message = user_recap_message.replace(f"🛂 NOUVELLE DEMANDE PASSEPORT ID - {PAGE_NAME} (COÛT: {PASSPORT_COST_AR:,} Ar) 🛂", "🛂 **Votre Demande de Passeport est enregistrée !**")
-                user_recap_message = user_recap_message.replace(f"\nID Utilisateur: {sender_id}", "").replace("ACTION:", "\n*Statut :*")
+                
+                # Nettoyage des détails internes dans le message utilisateur
+                user_recap_message = user_recap_message.replace(f"\nID Utilisateur: {sender_id}", "")
+                user_recap_message = user_recap_message.replace("ACTION:", "\n*Statut :*")
                 user_recap_message = user_recap_message.replace(f"Type: **{'PRÉSENTIEL' if 'PRESENTIEL' in form_type_key else 'EN LIGNE'}**\n", "")
-
+                
                 send_message(sender_id, user_recap_message, current_state="AI")
 
                 # --- GÉNÉRATION ET ENVOI DU QR CODE ---
@@ -421,10 +446,7 @@ def get_bot_response(message_text, sender_id):
             "🌐**En ligne** ( Par appel vidéo, live)\n"
             "☑9h-12h, 14h-18h / 🌃Spécial nuit à partir 21h\n"
             "🏠**Formation Présentiel** avec connexion gratuit 📶\n"
-            "📍FIANARANTSOA (Limité 10) - 8-15 nov. 2025 (Andrainjato)\n"
-            "📍ANTSIRABE (Limité 10) - 22 Nov. 2025\n"
-            "📍ANTANANARIVO (Limité 20) - 29 Nov. 2025\n"
-            "📍MORONDAVA (Limité 10) - 6 Déc. 2025\n"
+            f"{PRESENTIEL_LOCATIONS_DISPLAY}"
             "❤Avec suivi illimité❤ | Garantie: Compte vérifié KYC✅\n"
             f"**😍Frais de formation: {FORMATION_COST_AR:,}ar (Présentiel ou en ligne)**\n"
             "🥰Aza tara misoratra anarana sy manao réservation fa sao feno ny toerana✅\n"
@@ -501,7 +523,7 @@ def handle_messages():
                     print(f"Message de {sender_id}. Texte: '{message_text}', Payload: '{payload}'")
                 elif postback:
                     payload = postback.get("payload")
-                    message_text = payload # Utilise le payload comme texte dans la logique de postback
+                    message_text = payload 
                     print(f"Postback de {sender_id}. Payload: '{payload}'")
                 else:
                     print(f"Événement non traité (non-message/non-postback).")
@@ -535,8 +557,53 @@ def handle_messages():
                     if payload == "SHOW_OFFERS_MENU":
                         handle_offers_menu(sender_id)
                         return "OK", 200
+                    
+                    # --- NOUVEAU: ÉTAPE 1 FORMATION PRÉSENTIEL (Affiche les boutons de lieu) ---
+                    elif payload == "START_FORM_FORMATION_PRESENTIEL":
+                        message_text = (
+                            "✅ Veuillez choisir l'emplacement et la date de la formation présentielle :\n\n"
+                            f"{PRESENTIEL_LOCATIONS_DISPLAY}\n"
+                            "Cliquez sur l'une des options ci-dessous pour continuer l'inscription."
+                        )
                         
-                    elif payload in ["START_FORM_PROXY", "START_FORM_PASSPORT", "START_FORM_FORMATION_ONLINE", "START_FORM_FORMATION_PRESENTIEL"]:
+                        quick_replies = []
+                        for key, val in PRESENTIEL_LOCATIONS.items():
+                            quick_replies.append({"content_type": "text", "title": val['title'], "payload": f"LOCATION_CHOSEN_{key}"})
+
+                        message_data = {
+                            "recipient": {"id": sender_id},
+                            "message": {"text": message_text, "quick_replies": quick_replies}
+                        }
+                        send_facebook_api_request(message_data)
+                        
+                        # Changement d'état pour marquer l'attente du choix
+                        user_session_state[sender_id]['state'] = "AWAITING_LOCATION_CHOICE"
+                        return "OK", 200
+                        
+                    # --- NOUVEAU: ÉTAPE 2 FORMATION PRÉSENTIEL (Réception du choix de lieu et lancement du formulaire) ---
+                    elif payload and payload.startswith("LOCATION_CHOSEN_") and current_session_state == "AWAITING_LOCATION_CHOICE":
+                        location_key = payload.replace("LOCATION_CHOSEN_", "")
+                        location_info = PRESENTIEL_LOCATIONS.get(location_key, {"location": "Lieu Inconnu"})
+                        chosen_location = location_info['location']
+                        
+                        form_key = "FORM_FORMATION_PRESENTIEL"
+                        form_config = FORM_STEPS[form_key]
+                        
+                        # Personnaliser la première question avec le lieu choisi
+                        start_question = form_config['start_question'].replace("[LIEU_CHOISI]", chosen_location)
+                        
+                        user_session_state[sender_id] = {
+                            'state': form_key,
+                            'step': 0, 
+                            'data': {'lieu_presentiel': chosen_location}, # Stockage du lieu
+                            'current_field': form_config['start_field']
+                        }
+                        
+                        send_message(sender_id, start_question, current_state="AI")
+                        return "OK", 200
+                    
+                    # --- DÉMARRAGE DES AUTRES FORMULAIRES (Proxy, Passeport, Formation En Ligne) ---
+                    elif payload in ["START_FORM_PROXY", "START_FORM_FORMATION_ONLINE", "START_FORM_PASSPORT"]:
                         form_key = payload.replace("START_", "")
                         form_config = FORM_STEPS[form_key]
                         
