@@ -2,39 +2,52 @@ import os
 import requests
 import json
 import uuid
-import random # Ajouté 'random' car il est utilisé par MALAGASY_FALLBACK_RESPONSES
+import random
 from flask import Flask, request, jsonify
 
 # --- CONFIGURATION & JETONS (Récupération STRICTE des variables d'environnement) ---
-# Le bot ne démarrera PAS si l'un de ces jetons est manquant.
 
 try:
     VERIFY_TOKEN = os.environ['VERIFY_TOKEN']
-    # ATTENTION : NE PAS CODER EN DUR LE PAGE_ACCESS_TOKEN. Utilisez la variable d'environnement sur Render.
+    # ATTENTION : NE PAS CODER EN DUR LE PAGE_ACCESS_TOKEN.
     PAGE_ACCESS_TOKEN = os.environ['PAGE_ACCESS_TOKEN']
-    # ID FACEBOOK DE L'ADMINISTRATEUR (VÉRIFIEZ ABSOLUMENT CET ID)
+    # ID FACEBOOK DE L'ADMINISTRATEUR
     ADMIN_SENDER_ID = os.environ['ADMIN_ID']
 except KeyError as e:
-    # Affiche une erreur et quitte si les jetons critiques ne sont pas configurés sur Render
-    print(f"!!! ERREUR DE CONFIGURATION CRITIQUE : La variable d'environnement {e} est manquante. Assurez-vous que VERIFY_TOKEN, PAGE_ACCESS_TOKEN, et ADMIN_ID sont définis sur Render. !!!")
+    print(f"!!! ERREUR DE CONFIGURATION CRITIQUE : La variable d'environnement {e} est manquante. !!!")
     raise SystemExit(f"Arrêt : Variable {e} non configurée.")
 
 PAGE_NAME = "Aigle Vision Mada"
 EXTERNAL_API_URL = "https://rest-api-o42n.onrender.com/api/chatgpt5"
-QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/" # CARACTÈRE U+00A0 SUPPRIMÉ ICI.
-BASE_SYSTEM_PROMPT = f"Tu es le bot amical de {PAGE_NAME}. Tu proposes des formations en travail en ligne et des proxys de qualité à prix abordable."
+QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/"
 
-# --- DONNÉES ET TARIFS (VALEURS MISES À JOUR) ---
-FORMATION_COST_AR = 120000 # Nouveau prix: 120 000 Ar
-PASSPORT_COST_AR = 40000  # Nouveau prix: 40 000 Ar
-PROXY_COST_AR = 47000     # Nouveau prix: 47 000 Ar
+# --- AJOUT DU CONTEXTE COMMERCIAL POUR L'IA (Nouveau Prompt) ---
+FORMATION_PITCH = (
+    "Raha mahazo ny teny Frantsay na Anglisy dia ity ny asa tena mety aminao🥰. "
+    "Ny surveys sy ny Micro-tâches dia anisan'ireo asa tsara karama. "
+    "Le bot propose la **Formation Complète (de A à Z)** pour les surveys, "
+    "avec la technique et le Proxy Résidentiel. "
+    "Frais de formation: 120 000ar. Aza tara manao réservation!"
+)
+BASE_SYSTEM_PROMPT = (
+    f"Tu es le bot amical et commercial de {PAGE_NAME}. "
+    "Ta mission est d'encourager l'achat de formations et de proxys. "
+    "Tu dois intégrer l'argumentaire suivant dans tes réponses : "
+    f"'{FORMATION_PITCH}'"
+)
+# ----------------------------------------------------------------------
+
+# --- DONNÉES ET TARIFS ---
+FORMATION_COST_AR = 120000 
+PASSPORT_COST_AR = 40000 
+PROXY_COST_AR = 47000 
 PROXY_PRICE_DISPLAY = f"{PROXY_COST_AR:,} Ar (pour un proxy résidentiel, 1 mois)"
 
 # --- MESSAGE DE BIENVENUE EN MALGACHE ---
 WELCOME_MESSAGE_MG = (
     "Tongasoa eto amin'ny pejy **Aigle Vision Mada**! 🦅\n\n"
     "Manolotra **fiofanana feno momba ny Surveys sy Micro-tâches** izahay, hahafahanao miasa sy mahazo vola amin'ny aterineto. Vonona hanampy anao izahay. **Ato ianao dia afaka mahazo karama 3$ - 10$ isan'andro.**\n\n"
-    "Kitiho ny bokotra **\"Offres\"** hijerena ny antsipiriany!" # CARACTÈRE U+00A0 SUPPRIMÉ ICI.
+    "Kitiho ny bokotra **\"Offres\"** hijerena ny antsipiriany!"
 )
 
 # Réponses de repli en Malgache en cas d'échec de l'IA externe
@@ -44,13 +57,12 @@ MALAGASY_FALLBACK_RESPONSES = [
     "Te hahazo vola amin'ny internet? Aigle Vision Mada manome ny teknika rehetra ilainao. Afaka manomboka ianao izao.",
 ]
 
-# --- ÉTATS DE SESSION ---
-user_session_state = {} # CARACTÈRE U+00A0 SUPPRIMÉ ICI.
+# --- ÉTATS DE SESSION (En mémoire, non persistant) ---
+user_session_state = {}
 
 app = Flask(__name__)
 
-# --- DÉFINITION DES ÉTAPES DU FORMULAIRE (TEXTES MIS À JOUR) ---
-# ... (FORM_PASSPORT et FORM_STEPS restent inchangés dans leur logique) ...
+# --- DÉFINITION DES ÉTAPES DU FORMULAIRE (MIS À JOUR) ---
 
 FORM_PASSPORT = {
     "start_field": "nom_prenom",
@@ -64,17 +76,31 @@ FORM_PASSPORT = {
 }
 
 FORM_STEPS = {
-    "FORM_FORMATION": {
+    "FORM_FORMATION_ONLINE": { # NOUVEAU : EN LIGNE
         "start_field": "nom_prenom",
-        "start_question": f"Parfait ! Pour l'inscription à la formation ({FORMATION_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
+        "start_question": f"Parfait ! Pour l'inscription à la formation EN LIGNE ({FORMATION_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
         "steps": [
             ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
             ("adresse", "Quelle est votre **Adresse** complète ?", ),
             ("competence", "Avez-vous de l'expérience concernant les **sondages en ligne** ? (Oui/Non ou précisez vos compétences)"),
             ("confirmation", f"Merci ! Veuillez confirmer votre inscription ({FORMATION_COST_AR:,} Ar) : (OUI pour valider)"),
         ],
-        "end_message": "INSCRIPTION FORMATION"
+        "end_message": "INSCRIPTION FORMATION EN LIGNE"
     },
+    
+    "FORM_FORMATION_PRESENTIEL": { # NOUVEAU : PRÉSENTIEL
+        "start_field": "nom_prenom",
+        "start_question": f"Parfait ! Pour l'inscription à la formation PRÉSENTIEL ({FORMATION_COST_AR:,} Ar), quel est votre **Nom et Prénom** ?",
+        "steps": [
+            ("lieu_presentiel", "Quel est le **Lieu** et la **Date** que vous souhaitez réserver ? (Ex: FIANARANTSOA 8-15 Nov / ANTSIRABE 22 Nov / ANTANANARIVO 29 Nov / MORONDAVA 6 Déc)"),
+            ("numero_mobile", "Quel est votre **Numéro de mobile** ?", ),
+            ("adresse", "Quelle est votre **Adresse** complète ?", ),
+            ("competence", "Avez-vous de l'expérience concernant les **sondages en ligne** ? (Oui/Non ou précisez vos compétences)"),
+            ("confirmation", f"Merci ! Veuillez confirmer votre inscription ({FORMATION_COST_AR:,} Ar) : (OUI pour valider)"),
+        ],
+        "end_message": "INSCRIPTION FORMATION PRÉSENTIEL"
+    },
+    
     "FORM_PROXY": {
         "start_field": "nom_prenom",
         "start_question": "Super ! Quel est votre **Nom et Prénom** pour cette commande de proxy ?",
@@ -97,10 +123,9 @@ def send_facebook_api_request(message_data):
     url = f"https://graph.facebook.com/v18.0/me/messages?access_token={PAGE_ACCESS_TOKEN}"
     try:
         response = requests.post(url, json=message_data)
-        response.raise_for_status() # Lève une exception HTTP pour les codes 4xx/5xx
+        response.raise_for_status() 
         return True
     except requests.exceptions.HTTPError as e:
-        # Log détaillé en cas d'erreur Facebook
         print(f"!!! ÉCHEC DE L'ENVOI FACEBOOK (HTTPError) : Code {response.status_code}. Réponse : {response.text}")
         if response.status_code == 400:
              print("!!! VÉRIFIEZ LE PAGE_ACCESS_TOKEN ET/OU L'ID DE L'UTILISATEUR DESTINATAIRE (admin ou client).")
@@ -110,7 +135,7 @@ def send_facebook_api_request(message_data):
         return False
 
 def send_message_to_admin(admin_id, message_text):
-    """Envoie un message de notification à l'administrateur, utilisant la fonction d'envoi renforcée."""
+    """Envoie un message de notification à l'administrateur."""
     print(f"--- Tentative d'envoi de la notification admin à {admin_id} ---")
     
     if not ADMIN_SENDER_ID or ADMIN_SENDER_ID == '100039040104071':
@@ -126,7 +151,7 @@ def send_message_to_admin(admin_id, message_text):
 
 
 def send_message(recipient_id, message_text, current_state="AI"):
-    """Envoie une réponse à l'utilisateur avec les boutons d'action (Quick Replies), utilisant la fonction d'envoi renforcée."""
+    """Envoie une réponse à l'utilisateur avec les boutons d'action (Quick Replies)."""
     print(f"--- Tentative d'envoi du message à {recipient_id}. État: {current_state} ---")
     
     if current_state != "HUMAN":
@@ -150,9 +175,7 @@ def send_message(recipient_id, message_text, current_state="AI"):
 
 
 def upload_and_send_image(recipient_id, image_url):
-    """
-    Télécharge le QR code en mémoire et l'uploade sur Facebook pour envoi.
-    """
+    """Télécharge le QR code en mémoire et l'uploade sur Facebook pour envoi."""
     print(f"--- Début de l'envoi du QR Code à {recipient_id} ---")
     
     try:
@@ -189,18 +212,18 @@ def upload_and_send_image(recipient_id, image_url):
     except requests.exceptions.RequestException as e:
         print(f"!!! Échec de l'upload ou de l'envoi de l'image (QR Code) : {e}")
 
-# ... (handle_offers_menu, call_external_api, handle_form_input, get_bot_response restent inchangés dans leur logique) ...
+# --- Fonctions de Logique ---
 
 def handle_offers_menu(sender_id):
-    """Affiche le menu détaillé des offres."""
+    """Affiche le menu détaillé des offres, 'Faire une formation' est en premier."""
     print(f"--- Affichage du menu Offres à {sender_id} ---")
 
     message_text = "🔎 **Voici toutes nos offres de services et produits** :"
 
     offers_replies = [
+        {"content_type": "text", "title": "Faire une formation", "payload": "OFFER_FORMATION_INFO"}, # Déplacé en premier
         {"content_type": "text", "title": "Créer un passeport", "payload": "START_FORM_PASSPORT"},
         {"content_type": "text", "title": "Acheter un proxy", "payload": "START_FORM_PROXY"},
-        {"content_type": "text", "title": "Faire une formation", "payload": "OFFER_FORMATION_INFO"},
     ]
 
     message_data = {
@@ -237,10 +260,10 @@ def handle_form_input(sender_id, message_text):
     data = state_info['data']
     current_field = state_info.get('current_field')
 
-    form_type = state.split('_')[1]
-    form_config = FORM_STEPS[f"FORM_{form_type}"]
+    form_type_key = state.replace("FORM_", "")
+    form_config = FORM_STEPS[state]
     total_steps = len(form_config['steps'])
-
+    
     # 1. STOCKAGE ET VALIDATION DE L'INPUT
     if current_field:
 
@@ -260,11 +283,14 @@ def handle_form_input(sender_id, message_text):
                 # --- GÉNÉRATION DE LA TRANSACTION ET DU RÉSUMÉ ---
                 transaction_id = str(uuid.uuid4()).replace('-', '')[:15].upper()
 
-                # Calculs et messages (UTILISE LES NOUVEAUX PRIX)
-                if form_type == "FORMATION":
+                # Calculs et messages 
+                cost = 0
+                if form_type_key.startswith("FORMATION"):
                     cost = FORMATION_COST_AR
                     recap_message = (
-                        f"🎉 NOUVELLE INSCRIPTION FORMATION - {PAGE_NAME} (COÛT: {cost:,} Ar) 🎉\n"
+                        f"🎉 NOUVELLE {form_config['end_message']} - {PAGE_NAME} (COÛT: {cost:,} Ar) 🎉\n"
+                        f"Type: **{'PRÉSENTIEL' if 'PRESENTIEL' in form_type_key else 'EN LIGNE'}**\n"
+                        f"{f'Lieu Réservé: {data.get("lieu_presentiel", "N/A")}\n' if 'PRESENTIEL' in form_type_key else ''}"
                         f"Nom: **{data.get('nom_prenom', 'N/A')}**\n"
                         f"Numéro de mobile: {data.get('numero_mobile', 'N/A')}\n"
                         f"Adresse: {data.get('adresse', 'N/A')}\n"
@@ -275,24 +301,24 @@ def handle_form_input(sender_id, message_text):
                     )
                     qr_data = f"Type: Formation; ID: {transaction_id}; Nom: {data.get('nom_prenom')}"
 
-                elif form_type == "PROXY":
+                elif form_type_key == "PROXY":
                     num_proxy = data.get('nombre_proxy', 0)
                     total_cout = num_proxy * PROXY_COST_AR
+                    cost = total_cout
 
                     recap_message = (
-                        f"🛒 NOUVELLE COMMANDE PROXY - {PAGE_NAME} 🛒\n"
+                        f"🛒 NOUVELLE COMMANDE PROXY - {PAGE_NAME} (COÛT ESTIMÉ: {cost:,.0f} Ar) 🛒\n"
                         f"Nom: **{data.get('nom_prenom', 'N/A')}**\n"
                         f"Adresse: {data.get('adresse', 'N/A')}\n"
                         f"Numéro de mobile: {data.get('numero_mobile', 'N/A')} \n"
                         f"Nombre de Proxy: {num_proxy}\n"
-                        f"Estimation de coût: {total_cout:,.0f} Ar\n"
                         f"Numéro de transaction: **{transaction_id}**\n"
                         f"ACTION: COMMANDE VALIDÉE\n"
                         f"ID Utilisateur: {sender_id}"
                     )
                     qr_data = f"Type: Proxy; ID: {transaction_id}; Nom: {data.get('nom_prenom')}"
 
-                elif form_type == "PASSPORT":
+                elif form_type_key == "PASSPORT":
                     cost = PASSPORT_COST_AR
                     recap_message = (
                         f"🛂 NOUVELLE DEMANDE PASSEPORT ID - {PAGE_NAME} (COÛT: {cost:,} Ar) 🛂\n"
@@ -310,10 +336,12 @@ def handle_form_input(sender_id, message_text):
 
                 # --- ENVOI DU RÉCAPITULATIF À L'UTILISATEUR ---
                 user_recap_message = recap_message
-                user_recap_message = user_recap_message.replace(f"🎉 NOUVELLE INSCRIPTION FORMATION - {PAGE_NAME} (COÛT: {FORMATION_COST_AR:,} Ar) 🎉", "🎉 **Votre Inscription est enregistrée !**")
-                user_recap_message = user_recap_message.replace(f"🛒 NOUVELLE COMMANDE PROXY - {PAGE_NAME} 🛒", "🛒 **Votre Commande est enregistrée !**")
+                user_recap_message = user_recap_message.replace(f"🎉 NOUVELLE INSCRIPTION FORMATION EN LIGNE - {PAGE_NAME} (COÛT: {FORMATION_COST_AR:,} Ar) 🎉", "🎉 **Votre Inscription EN LIGNE est enregistrée !**")
+                user_recap_message = user_recap_message.replace(f"🎉 NOUVELLE INSCRIPTION FORMATION PRÉSENTIEL - {PAGE_NAME} (COÛT: {FORMATION_COST_AR:,} Ar) 🎉", "🎉 **Votre Inscription PRÉSENTIEL est enregistrée !**")
+                user_recap_message = user_recap_message.replace(f"🛒 NOUVELLE COMMANDE PROXY - {PAGE_NAME} (COÛT ESTIMÉ: {cost:,.0f} Ar) 🛒", "🛒 **Votre Commande est enregistrée !**")
                 user_recap_message = user_recap_message.replace(f"🛂 NOUVELLE DEMANDE PASSEPORT ID - {PAGE_NAME} (COÛT: {PASSPORT_COST_AR:,} Ar) 🛂", "🛂 **Votre Demande de Passeport est enregistrée !**")
                 user_recap_message = user_recap_message.replace(f"\nID Utilisateur: {sender_id}", "").replace("ACTION:", "\n*Statut :*")
+                user_recap_message = user_recap_message.replace(f"Type: **{'PRÉSENTIEL' if 'PRESENTIEL' in form_type_key else 'EN LIGNE'}**\n", "")
 
                 send_message(sender_id, user_recap_message, current_state="AI")
 
@@ -363,24 +391,54 @@ def get_bot_response(message_text, sender_id):
     """Décide si la réponse est prédéfinie (tarifs/services) ou générée par l'IA."""
     message_text_lower = message_text.lower()
 
-    # --- GESTION DES BOUTONS D'OFFRE : FORMATION (Description détaillée + Bouton d'inscription) ---
+    # --- GESTION DES BOUTONS D'OFFRE : FORMATION (Texte long + Choix En ligne/Présentiel) ---
     if "offer_formation_info" == message_text_lower:
 
-        message_text = (
-            f"🎓 **FORMATION SONDAGES RÉMUNÉRÉS : Le Guide Complet** 🎓\n"
-            f"**Tarif : {FORMATION_COST_AR:,} Ar (Formation en ligne)**\n"
-            "Notre formation complète vous offre la méthode et les outils pour **générer un revenu stable via les sondages rémunérés**.\n"
-            "* **Concept central** : Nous vous apprenons à utiliser les Proxys Résidentiels pour accéder de manière fiable aux sondages internationaux, qui sont souvent les mieux payés.\n"
-            "* **Objectifs** : Maîtriser les plateformes, optimiser vos profils et garantir la fiabilité de vos réponses pour maximiser vos gains.\n"
+        message_text_long = (
+            "✅Raha mahazo ny teny Frantsay🇫🇷na Anglisy🇺🇸dia ity ny asa tena mety aminao🥰\n"
+            "🥰Ny surveys sy ny Micro-tâches dia anisan'ireo asa tsara karama raha ampy information🔰 sy technique ho entina manao azy ianao🥰\n"
+            "❌⚠Tsy sarotra tompoko ny surveys, ny valiny ihany koa dia efa omeny eo fa isika no misafidy, ka ny Paik'ady no mila ananana✅\n"
+            "⛔Tsy misy fetra ny fotoana iasana, fa izay tinao🥰 afaka miasa 24h/24h ary 7j/7\n"
+            "✅**Zavatra ilaiana raha te hanao ilay asa**✅\n"
+            "    👉Téléphone📱ou Ordinateur💻\n"
+            "    👉Connexion Internet 📶(Data mobil ou Wi-Fi)\n"
+            "✅**Formation Complète (de A à Z) sur Timebucks USA et d'autres Plate-forme** ✅\n"
+            "💼 **Programme de formation complet** 📝👇\n"
+            "✨Introduction, ☑Bases fondamentales\n"
+            "📧Création Gmail sans numéro illimité\n"
+            "✅Tous les outils nécessaires☑\n"
+            "🌐Bases fondamentales et achat de Proxy☑\n"
+            "🌐Test et installation de Proxy☑\n"
+            "✅Procédure de création des comptes USA🇺🇸 Timebucks et d'autres Plate-forme ✅\n"
+            "✅Procédure de création Profil surveys optimisé💰\n"
+            "💻📱Simulation des travaux avec stratégies 🎯💼\n"
+            "💰Création Portefeuille électronique💼\n"
+            "✅Vérification KYC🔒☑\n"
+            "✅Les démarches de retrait 💸💵\n"
+            "💎🎁Bonus, Compte, Proxy, ID étrangère💎🎁\n"
+            "✅🥰**Miasa avy hatrany rehefa vita ny formation** 🥰✅\n"
+            "**👉🌐🔰Types de formation🔰 🌐👇**\n"
+            "🌐**En ligne** ( Par appel vidéo, live)\n"
+            "☑9h-12h, 14h-18h / 🌃Spécial nuit à partir 21h\n"
+            "🏠**Formation Présentiel** avec connexion gratuit 📶\n"
+            "📍FIANARANTSOA (Limité 10) - 8-15 nov. 2025 (Andrainjato)\n"
+            "📍ANTSIRABE (Limité 10) - 22 Nov. 2025\n"
+            "📍ANTANANARIVO (Limité 20) - 29 Nov. 2025\n"
+            "📍MORONDAVA (Limité 10) - 6 Déc. 2025\n"
+            "❤Avec suivi illimité❤ | Garantie: Compte vérifié KYC✅\n"
+            f"**😍Frais de formation: {FORMATION_COST_AR:,}ar (Présentiel ou en ligne)**\n"
+            "🥰Aza tara misoratra anarana sy manao réservation fa sao feno ny toerana✅\n"
+            "---"
         )
 
         quick_replies = [
-            {"content_type": "text", "title": "S'inscrire à la formation", "payload": "START_FORM_FORMATION"},
+            {"content_type": "text", "title": "S'inscrire (EN LIGNE)", "payload": "START_FORM_FORMATION_ONLINE"},
+            {"content_type": "text", "title": "S'inscrire (PRÉSENTIEL)", "payload": "START_FORM_FORMATION_PRESENTIEL"},
         ]
         message_data = {
             "recipient": {"id": sender_id},
             "message": {
-                "text": message_text,
+                "text": message_text_long,
                 "quick_replies": quick_replies
             }
         }
@@ -478,7 +536,7 @@ def handle_messages():
                         handle_offers_menu(sender_id)
                         return "OK", 200
                         
-                    elif payload in ["START_FORM_PROXY", "START_FORM_FORMATION", "START_FORM_PASSPORT"]:
+                    elif payload in ["START_FORM_PROXY", "START_FORM_PASSPORT", "START_FORM_FORMATION_ONLINE", "START_FORM_FORMATION_PRESENTIEL"]:
                         form_key = payload.replace("START_", "")
                         form_config = FORM_STEPS[form_key]
                         
