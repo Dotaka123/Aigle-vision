@@ -9,9 +9,9 @@ from flask import Flask, request, jsonify
 # Le bot ne démarrera PAS si l'un de ces jetons est manquant.
 
 try:
-    VERIFY_TOKEN = os.environ['vody']
+    VERIFY_TOKEN = os.environ['VERIFY_TOKEN']
     # ATTENTION : NE PAS CODER EN DUR LE PAGE_ACCESS_TOKEN. Utilisez la variable d'environnement sur Render.
-    PAGE_ACCESS_TOKEN = os.environ['EAAI12hLrtqEBPxaOXb7oL7mx8rR1fwNgD2mtNVQ6rKZCo7wGZACWyWwpCZAP9F9xUiz6Q96Xg3ZB9Upo8zSkmjUGfa2R2dE5k75ZBN5PdTpH85qhPOnELBYoVAtcHxmZC3XMH5FlRBooNk4BCx7SavRgmFpi8vQ470Tt6IHl9QviaXPCLRk7ZBbuh2trAO4LQzRblZAssAZDZD']
+    PAGE_ACCESS_TOKEN = os.environ['PAGE_ACCESS_TOKEN']
     # ID FACEBOOK DE L'ADMINISTRATEUR (VÉRIFIEZ ABSOLUMENT CET ID)
     ADMIN_SENDER_ID = os.environ['ADMIN_ID']
 except KeyError as e:
