@@ -8,7 +8,7 @@ from flask import Flask, request, jsonify
 # --- CONFIGURATION & JETONS ---
 # REMPLACEZ CES VALEURS PAR VOS JETONS RÉELS
 VERIFY_TOKEN = os.environ.get('VERIFY_TOKEN', 'tata')
-PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBP8akgjumyPKeBTZBZCq6updYBcX8EXEqjQTdZBYZCLEbTfpyBot6dqiAUixLajtwti0H20hQb4cZCWoaWqXVsmAFD4ZAFxzZAVAT8UBl9BN3xuLI2ZCE0OlQ3OpJbmeLlVfMKlPT1DDeYybycKPZB43tLMSFTFVrZB1CyG3dtl6pyqInHwcQ8a95ms1T0jJzAOgd0Xh7wCZA1w4PQZDZD')
+PAGE_ACCESS_TOKEN = os.environ.get('PAGE_ACCESS_TOKEN', 'EAAI12hLrtqEBPxaOXb7oL7mx8rR1fwNgD2mtNVQ6rKZCo7wGZACWyWwpCZAP9F9xUiz6Q96Xg3ZB9Upo8zSkmjUGfa2R2dE5k75ZBN5PdTpH85qhPOnELBYoVAtcHxmZC3XMH5FlRBooNk4BCx7SavRgmFpi8vQ470Tt6IHl9QviaXPCLRk7ZBbuh2trAO4LQzRblZAssAZDZD')
 PAGE_NAME = "Aigle Vision Mada"
 EXTERNAL_API_URL = "https://rest-api-o42n.onrender.com/api/chatgpt5"
 QR_API_URL = "https://api.qrserver.com/v1/create-qr-code/" 
