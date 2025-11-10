@@ -2,7 +2,6 @@ import os
 import requests
 import json
 import uuid
-import random 
 from flask import Flask, request, jsonify
 
 # --- CONFIGURATION & JETONS ---
